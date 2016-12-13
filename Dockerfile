@@ -1,4 +1,4 @@
-FROM python-opencv:latest
+FROM pepebecker/python-opencv:latest
 
 RUN mkdir -p /usr/src/app
 
