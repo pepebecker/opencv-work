@@ -12,9 +12,9 @@ from scipy.spatial import Delaunay
 
 import dlib
 
-PREDICTOR_PATH = "shape_predictor_68_face_landmarks.dat"
-INPUT_PATH = "input"
-OUTPUT_PATH = "output"
+PREDICTOR_PATH = "../shapes/shape_predictor_68_face_landmarks.dat"
+INPUT_PATH = "../faces"
+OUTPUT_PATH = "../output"
 
 if not os.path.exists(OUTPUT_PATH):
     os.makedirs(OUTPUT_PATH)
