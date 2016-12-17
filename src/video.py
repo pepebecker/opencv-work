@@ -20,7 +20,7 @@ parser.add_argument('-o', nargs=1, type=str,	metavar='output-path',	required=Tru
 parser.add_argument('-r', nargs=1, type=float,	metavar='degree',		default=[0],			help='Rotate the video by # degree')
 parser.add_argument('-c', nargs=1, type=str,	metavar='1024x768',		default=['1024x768'],	help='Crop the video to a specified resolution')
 parser.add_argument('-f', nargs=1, type=float,	metavar='frame-rate',	default=[30],			help='Specify the frame rate of the output video')
-parser.add_argument('-k', nargs=1, type=int,	metavar='skip-rate',	default=[2],			help='Specify the skip frame rate of the recognition of the video')
+parser.add_argument('-k', nargs=1, type=int,	metavar='skip-rate',	default=[1],			help='Specify the skip frame rate of the recognition of the video')
 args = parser.parse_args()
 
 # Set constant variables
@@ -53,12 +53,60 @@ predictor = dlib.shape_predictor(PREDICTOR_PATH)
 
 # Initialize progressbar
 progressbar.init()
-
 total_frames = toolbox.getTotalFrames(INPUT_PATH)
 frame_count = 0
+
+# Define variables for frame skipping
 skipped_frames = 0
-points = None
-tri = None
+skip_frame_x = None
+skip_frame_y = None
+skip_rect	 = None
+skip_points	 = None
+skip_tri	 = None
+
+def rotateFrame(image, angle, crop=True):
+	if (angle < 0):
+		angle = 360 + angle
+
+	if (angle == 0):
+		return image
+
+	if (angle != 90 and angle != 180 and angle != 270):
+		raise NameError('You can only rotate the image in steps of 90 / -90 degree')
+		return image
+
+	if (angle == 180):
+		(h, w) = image.shape[:2]
+		center = (w / 2, h / 2)
+		matrix = cv2.getRotationMatrix2D(center, -angle, 1.0)
+		result = cv2.warpAffine(frame, matrix, (w, h))
+		return result
+
+	(h, w) = image.shape[:2]
+
+	size = max(w, h)
+	canvas = np.zeros((size, size, 3), np.uint8)
+
+	x = int((size - w) / 2)
+	y = int((size - h) / 2)
+
+	canvas[y:y+h, x:x+w] = image
+
+	center = (size / 2, size / 2)
+	matrix = cv2.getRotationMatrix2D(center, -angle, 1.0)
+	canvas = cv2.warpAffine(canvas, matrix, (size, size))
+
+	if (crop):
+		canvas = canvas[x:x+w, y:y+h]
+
+	return canvas
+
+def cropFrame(frame, x, y, w, h):
+	rows, cols = frame.shape[:2]
+	if (cols > w and rows > h):
+		return frame[y:y+h, x:x+w]
+	else:
+		return frame
 
 # Go through each frame
 while True:
@@ -67,40 +115,74 @@ while True:
 	if frame is None:
 		exit()
 
-	# Roate the frame by ROTATION if its not 0
-	if (ROTATION != 0):
-		rows, cols, _ = frame.shape
-		matrix = cv2.getRotationMatrix2D((cols/2, rows/2), -ROTATION, 1)
-		frame = cv2.warpAffine(frame, matrix, (cols, rows))
+	# Roate the frame
+	frame = rotateFrame(frame, ROTATION)
 
-	# Crop the frame
-	height, width, _ = frame.shape
-	if (width != OUTPUT_WIDTH and height != OUTPUT_HEIGHT):
-		offset_x = int((cols - OUTPUT_WIDTH) / 2)
-		offset_y = int((rows - OUTPUT_HEIGHT) / 2)
-		frame = frame[offset_y:offset_y + OUTPUT_HEIGHT, offset_x:offset_x + OUTPUT_WIDTH]
+	scale = (1 / RECOGNIZE_SCALE)
 
 	# Check how many frames have been skipped
 	if skipped_frames < FRAME_SKIP_RATE:
 		skipped_frames += 1
 
-		if points != None and tri != None:
-			toolbox.drawTriangles(frame, points, tri, (1 / RECOGNIZE_SCALE))
+		if skip_frame_x is not None and skip_frame_y is not None:
+			frame = cropFrame(frame, skip_frame_x, skip_frame_y, OUTPUT_WIDTH, OUTPUT_HEIGHT)
+
+		if skip_rect is not None:
+			x, y, w, h = skip_rect
+			cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 0, 0), 2)
+
+		if skip_points is not None and skip_tri is not None:
+			toolbox.drawTriangles(frame, skip_points, skip_tri, scale)
 	else:
 		skipped_frames = 0
 
-		small = cv2.resize(frame, (0,0), fx=RECOGNIZE_SCALE, fy=RECOGNIZE_SCALE)
+		# Get current frame with and height for later usage
+		(FRAME_HEIGHT, FRAME_WIDTH) = frame.shape[:2]
 
-		# Recognize Face
+		# Create a low resolution version of the rotated frame
+		small = cv2.resize(frame, (0,0), fx=RECOGNIZE_SCALE, fy=RECOGNIZE_SCALE)
 		gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+
+		# Recognize a face on the low reslution frame
 		faces = face_cascade.detectMultiScale(gray, 1.1, 5)
-		for rect in faces:
-			shape = predictor(small, toolbox.rect2rectangle(rect))
-			
+		for (x, y, w, h) in faces:
+			# Scale up coordinates
+			x, y, w, h = int(x * scale), int(y * scale), int(w * scale), int(h * scale)
+
+			# Crop the frame
+			frame_x = int((FRAME_WIDTH - OUTPUT_WIDTH) / 2)
+			frame_y = y - int((OUTPUT_HEIGHT - h) / 2)
+			frame = cropFrame(frame, frame_x, frame_y, OUTPUT_WIDTH, OUTPUT_HEIGHT)
+
+			# Normalize coordinates to the cropped frame
+			x = x - frame_x
+			y = y - frame_y
+
+			# Draw a rectangle around the face
+			cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 0, 0), 2)
+
+			# Create a low resolution version of the cropped frame
+			small = cv2.resize(frame, (0,0), fx=RECOGNIZE_SCALE, fy=RECOGNIZE_SCALE)
+
+			# Find all the landmarks on the face
+			rs = RECOGNIZE_SCALE
+			low_rect = (x * rs, y * rs, w * rs, h * rs)
+			shape = predictor(small, toolbox.rect2rectangle(low_rect))
 			points = np.array([[p.y, p.x] for p in shape.parts()])
 
+			# Draw Delaunay pattern using the landmarks
 			tri = Delaunay(points)
-			toolbox.drawTriangles(frame, points, tri, (1 / RECOGNIZE_SCALE))
+			toolbox.drawTriangles(frame, points, tri, scale)
+
+			# Save values to use while skipping frames
+			skip_frame_x = frame_x
+			skip_frame_y = frame_y
+			skip_rect	 = (x, y, w, h)
+			skip_points	 = points
+			skip_tri	 = tri
+
+			# left_eye_points = np.array([p for i, p in enumerate(points) if i > 35 and i < 42])
+			# right_eye_points = np.array([p for i, p in enumerate(points) if i > 41 and i < 48])
 
 	# Write the frame to the output video file
 	video.write(frame)
