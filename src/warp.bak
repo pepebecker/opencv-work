@@ -1,0 +1,131 @@
+#!/usr/bin/env python3
+
+# Copyright (c) 2016 Satya Mallick <spmallick@learnopencv.com>
+# All rights reserved. No warranty, explicit or implicit, provided.
+
+import cv2
+import numpy as np
+from PIL import Image
+
+def overlayImage(bg, overlay):
+    for c in range(0, 3):
+        bg[0:overlay.shape[0], 0:overlay.shape[1], c] = overlay[:,:,c] * (overlay[:,:,3]/255.0) +  bg[0:overlay.shape[0], 0:overlay.shape[1], c] * (1.0 - overlay[:,:,3]/255.0)
+
+
+# Warps and alpha blends triangular regions from img1 and img2 to img
+def warpTriangle(img1, img2, tri1, tri2) :
+    
+    # Find bounding rectangle for each triangle
+    r1 = cv2.boundingRect(tri1)
+    r2 = cv2.boundingRect(tri2)
+    
+    # Offset points by left top corner of the respective rectangles
+    tri1Cropped = []
+    tri2Cropped = []
+    
+    for i in range(0, 3):
+        tri1Cropped.append(((tri1[0][i][0] - r1[0]),(tri1[0][i][1] - r1[1])))
+        tri2Cropped.append(((tri2[0][i][0] - r2[0]),(tri2[0][i][1] - r2[1])))
+
+    # Crop input image
+    img1Cropped = img1[r1[1]:r1[1] + r1[3], r1[0]:r1[0] + r1[2]]
+
+    # Given a pair of triangles, find the affine transform.
+    warpMat = cv2.getAffineTransform( np.float32(tri1Cropped), np.float32(tri2Cropped) )
+    
+    # Apply the Affine Transform just found to the src image
+    img2Cropped = cv2.warpAffine( img1Cropped, warpMat, (r2[2], r2[3]), None, flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT_101 )
+
+    # Get mask by filling triangle
+    mask = np.zeros((r2[3], r2[2], 4), dtype = np.float32)
+    cv2.fillConvexPoly(mask, np.int32(tri2Cropped), (1.0, 1.0, 1.0, 1.0), 16, 0);
+
+    img2Cropped = img2Cropped * mask
+    
+    # Copy triangular region of the rectangular patch to the output image
+    img2[r2[1]:r2[1]+r2[3], r2[0]:r2[0]+r2[2]] = img2[r2[1]:r2[1]+r2[3], r2[0]:r2[0]+r2[2]] * ( (1.0, 1.0, 1.0, 1.0) - mask )
+    
+    img2[r2[1]:r2[1]+r2[3], r2[0]:r2[0]+r2[2]] = img2[r2[1]:r2[1]+r2[3], r2[0]:r2[0]+r2[2]] + img2Cropped
+
+def convertToBGRA(image):
+    output = image.copy()
+    # output = cv2.cvtColor(output, cv2.COLOR_BGR2RGB)
+    pil_image = Image.fromarray(output)
+    pil_image = pil_image.convert("RGBA")
+    output = np.array(pil_image)
+    # output = cv2.cvtColor(output, cv2.COLOR_RGBA2BGRA)
+    return output
+
+if __name__ == '__main__' :
+    imgIn = cv2.imread("robot.jpg")
+    imgIn = convertToBGRA(imgIn)
+
+    imgOut = 0 * np.ones(imgIn.shape, dtype = imgIn.dtype)
+    imgOut[:, :, 3] = 0
+    
+    triIn = np.float32([[[220,200], [360,200], [290,250]]])
+    triOut = np.float32([[[400,200], [160,270], [400,400]]])
+    
+    warpTriangle(imgIn, imgOut, triIn, triOut)
+
+    cv2.polylines(imgIn, triIn.astype(int), True, (255, 150, 0), 1, 16)
+
+    overlayImage(imgIn, imgOut)
+
+    cv2.polylines(imgIn, triOut.astype(int), True, (0, 0, 255), 1, 16)
+
+    cv2.imshow("Input", imgIn)
+    
+    cv2.waitKey(0)
+
+
+
+# if __name__ == '__main__' :
+
+#     # Read input image
+#     overlay = cv2.imread("overlay.png", -1)
+#     imgIn = cv2.imread("robot.jpg")
+
+#     # Output image is set to white
+#     imgOut = 255 * np.zeros(imgIn.shape, dtype = imgIn.dtype)
+    
+#     # Input triangle
+#     triIn = np.float32([[[220,200], [360,200], [290,250]]])
+    
+#     # Output triangle
+#     triOut = np.float32([[[400,200], [160,270], [400,400]]])
+    
+#     # Warp all pixels inside input triangle to output triangle
+#     warpTriangle(imgIn, imgOut, triIn, triOut)
+
+#     # Draw triangle using this color
+#     color = (255, 150, 0)
+
+#     # Draw triangles in input and output images.
+#     cv2.polylines(imgIn, triIn.astype(int), True, color, 2, 16)
+#     cv2.polylines(imgOut, triOut.astype(int), True, color, 2, 16)
+
+#     # overlay = cv2.cvtColor(overlay, cv2.COLOR_BGR2RGB)
+
+#     # pil_image = Image.fromarray(imgOut)
+#     # pil_image = pil_image.convert("RGBA")
+
+#     # open_cv_image = np.array(pil_image) 
+#     # open_cv_image = open_cv_image[:, :, ::-1].copy()
+
+#     overlayImage(imgIn, imgOut)
+
+#     cv2.imshow("Input", imgIn)
+    
+#     cv2.waitKey(0)
+
+
+
+
+
+
+
+
+
+
+

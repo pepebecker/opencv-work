@@ -58,9 +58,9 @@ def init(width, height):
     color_data = np.array(
         [
             [1, 0, 0],
+            [1, 1, 0],
             [0, 1, 0],
-            [0, 0, 1],
-            [1, 1, 0]
+            [0, 0, 1]
 
         ],
         dtype=np.float32)

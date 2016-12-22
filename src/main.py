@@ -56,15 +56,15 @@ for f in glob.glob(os.path.join(INPUT_PATH, "*.jpg")):
             dist3 = math.hypot(p1[0] - p3[0], p1[1] - p3[1])
 
             # Only draw if the triangle is big enough
-            if dist1 > 30 and dist2 > 30 and dist3 > 30:
-                cX = int((p1[0] + p2[0] + p3[0]) / 3) # X position of center point
-                cY = int((p1[1] + p2[1] + p3[1]) / 3) # Y position of center point
+            # if dist1 > 30 and dist2 > 30 and dist3 > 30:
+            #     cX = int((p1[0] + p2[0] + p3[0]) / 3) # X position of center point
+            #     cY = int((p1[1] + p2[1] + p3[1]) / 3) # Y position of center point
 
-                red = np.array([255, 0, 0])
+            #     red = np.array([255, 0, 0])
 
-                img[draw.line(p1[0], p1[1], cX, cY)] = red
-                img[draw.line(p2[0], p2[1], cX, cY)] = red
-                img[draw.line(p3[0], p3[1], cX, cY)] = red
+            #     img[draw.line(p1[0], p1[1], cX, cY)] = red
+            #     img[draw.line(p2[0], p2[1], cX, cY)] = red
+            #     img[draw.line(p3[0], p3[1], cX, cY)] = red
             ############## End (Draw Sub-Triangles) ##############
 
             # src = np.array((
