@@ -7,8 +7,6 @@ import cv2
 import dlib
 import argparse
 
-from scipy.spatial import Delaunay
-
 # import my local helper modules
 import toolbox
 import progressbar
@@ -62,7 +60,7 @@ skip_frame_x = None
 skip_frame_y = None
 skip_rect	 = None
 skip_points	 = None
-skip_tri	 = None
+skip_deltas  = None
 
 def rotateFrame(image, angle, crop=True):
 	if (angle < 0):
@@ -127,12 +125,8 @@ while True:
 		if skip_frame_x is not None and skip_frame_y is not None:
 			frame = cropFrame(frame, skip_frame_x, skip_frame_y, OUTPUT_WIDTH, OUTPUT_HEIGHT)
 
-		if skip_rect is not None:
-			x, y, w, h = skip_rect
-			cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 0, 0), 2)
-
-		if skip_points is not None and skip_tri is not None:
-			toolbox.drawTriangles(frame, skip_points, skip_tri, scale)
+		if skip_points is not None and skip_deltas is not None:
+			toolbox.drawWarpedTriangles(frame, skip_points, skip_deltas, scale)
 	else:
 		skipped_frames = 0
 
@@ -158,9 +152,6 @@ while True:
 			x = x - frame_x
 			y = y - frame_y
 
-			# Draw a rectangle around the face
-			cv2.rectangle(frame, (x, y), (x+w, y+h), (255, 0, 0), 2)
-
 			# Create a low resolution version of the cropped frame
 			small = cv2.resize(frame, (0,0), fx=RECOGNIZE_SCALE, fy=RECOGNIZE_SCALE)
 
@@ -170,19 +161,40 @@ while True:
 			shape = predictor(small, toolbox.rect2rectangle(low_rect))
 			points = np.array([[p.y, p.x] for p in shape.parts()])
 
+			# Create an array of deltas points
+			deltas = np.zeros(points.shape)
+
+			# Left Eye
+			deltas[36] = [ 0, -3]
+			deltas[37] = [-2, -2]
+			deltas[38] = [-2,  0]
+			deltas[39] = [ 0,  1]
+			deltas[40] = [ 2,  0]
+			deltas[41] = [ 2, -2]
+
+			# Right Eye
+			deltas[42] = [ 0, -1]
+			deltas[43] = [-2,  0]
+			deltas[44] = [-2,  2]
+			deltas[45] = [ 0,  3]
+			deltas[46] = [ 2,  2]
+			deltas[47] = [ 2,  0]
+
+			# Mouth
+			deltas[48] = [-2, -1]
+			deltas[54] = [-2,  1]
+
+			deltas = np.add(points, deltas)
+
 			# Draw Delaunay pattern using the landmarks
-			tri = Delaunay(points)
-			toolbox.drawTriangles(frame, points, tri, scale)
+			toolbox.drawWarpedTriangles(frame, points, deltas, scale)
 
 			# Save values to use while skipping frames
 			skip_frame_x = frame_x
 			skip_frame_y = frame_y
 			skip_rect	 = (x, y, w, h)
 			skip_points	 = points
-			skip_tri	 = tri
-
-			# left_eye_points = np.array([p for i, p in enumerate(points) if i > 35 and i < 42])
-			# right_eye_points = np.array([p for i, p in enumerate(points) if i > 41 and i < 48])
+			skip_deltas  = deltas
 
 	# Write the frame to the output video file
 	video.write(frame)
