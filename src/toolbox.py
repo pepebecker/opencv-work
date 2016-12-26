@@ -3,6 +3,7 @@ import dlib
 import numpy as np
 from skimage import color, draw
 from scipy.spatial import Delaunay
+from OpenGL.GL import *
 
 def getTotalFrames(path):
 	cap = cv2.VideoCapture(path)
@@ -82,3 +83,21 @@ def drawWarpedTriangles(image, points, deltas, pos_multiplier=1):
 		tri_points_dst = np.float32([[[d1[1], d1[0]], [d2[1], d2[0]], [d3[1], d3[0]]]])
 
 		warpTriangle(image_orig, image, tri_points_src, tri_points_dst)
+
+def overlayImage(bg, overlay):
+	gray = cv2.cvtColor(overlay, cv2.COLOR_BGR2GRAY)
+	res, mask = cv2.threshold(gray, 10, 1, cv2.THRESH_BINARY_INV)
+
+	h, w = mask.shape
+	mask = np.repeat(mask, 3).reshape((h, w, 3))
+
+	bg *= mask
+	bg += overlay
+
+def bind(model):
+    glBindVertexArray(model.vao)
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, model.ebo)
+
+def unbind():
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)
+    glBindVertexArray(0)
