@@ -3,6 +3,7 @@ import dlib
 import numpy as np
 from skimage import color, draw
 from scipy.spatial import Delaunay
+from OpenGL.GL import *
 
 def getTotalFrames(path):
 	cap = cv2.VideoCapture(path)
@@ -92,3 +93,11 @@ def overlayImage(bg, overlay):
 
 	bg *= mask
 	bg += overlay
+
+def bind(model):
+    glBindVertexArray(model.vao)
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, model.ebo)
+
+def unbind():
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)
+    glBindVertexArray(0)

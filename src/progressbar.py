@@ -7,6 +7,7 @@ bar_width = 40
 def init():
 	global bar_width
 	bar_width = os.get_terminal_size().columns - 7
+	print('')
 	update(0)
 
 def update(progress):
