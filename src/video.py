@@ -120,7 +120,7 @@ def loop():
             frame = cropFrame(frame, SKIP_FRAME_X, SKIP_FRAME_Y, OUTPUT_WIDTH, OUTPUT_HEIGHT)
 
         if SKIP_POINTS is not None and SKIP_DELTAS is not None:
-            toolbox.drawWarpedTriangles(frame, SKIP_POINTS, SKIP_DELTAS, scale)
+            toolbox.drawWarpedTriangles(frame, SKIP_POINTS, SKIP_DELTAS)
     else:
         SKIPPED_FRAMES = 0
 
@@ -153,21 +153,7 @@ def loop():
             rs = RECOGNIZE_SCALE
             low_rect = (x * rs, y * rs, w * rs, h * rs)
             shape = PREDICTOR(small, toolbox.rect2rectangle(low_rect))
-            points = np.array([[p.y, p.x] for p in shape.parts()])
-
-            # Add synthetic points around the chin
-            # synthetics = points[:17]
-
-            # center = points[30]
-
-            # for i in range(0, len(synthetics)):
-            #   dx = synthetics[i][1] - center[1]
-            #   dy = synthetics[i][0] - center[0]
-
-            #   synthetics[i][1] += int(dx * 0.3)
-            #   synthetics[i][0] += int(dy * 0.3)
-
-            # points = np.concatenate((points, synthetics))
+            points = np.array([[p.y * scale, p.x * scale] for p in shape.parts()])
 
             # Create an array of deltas points
             deltas = np.zeros(points.shape)
@@ -191,7 +177,7 @@ def loop():
             deltas = np.add(points, deltas)
 
             # Draw Delaunay pattern using the landmarks
-            toolbox.drawWarpedTriangles(frame, points, deltas, scale)
+            toolbox.drawWarpedTriangles(frame, points, deltas)
 
             # Save values to use while skipping frames
             SKIP_FRAME_X = frame_x
@@ -208,9 +194,9 @@ def loop():
     p1, p2, p3 = SKIP_POINTS[39], SKIP_POINTS[42], SKIP_POINTS[33]
     w, h = OUTPUT_WIDTH, OUTPUT_HEIGHT
 
-    p1 = [(p1[1] * scale / w) * 2 - 1, -((p1[0] * scale / h) * 2 - 1)]
-    p2 = [(p2[1] * scale / w) * 2 - 1, -((p2[0] * scale / h) * 2 - 1)]
-    p3 = [(p3[1] * scale / w) * 2 - 1, -((p3[0] * scale / h) * 2 - 1)]
+    p1 = [(p1[1] / w) * 2 - 1, -((p1[0] / h) * 2 - 1)]
+    p2 = [(p2[1] / w) * 2 - 1, -((p2[0] / h) * 2 - 1)]
+    p3 = [(p3[1] / w) * 2 - 1, -((p3[0] / h) * 2 - 1)]
 
     triangle = Triangle(p1, p2, p3)
     tri_program = ShaderProgram(fragment=triangle.fragment, vertex=triangle.vertex)

@@ -22,16 +22,8 @@ def rect2rectangle(rect):
 def loadCascade(file):
 	return cv2.CascadeClassifier('../cascades/' + file)
 
-def drawTriangles(image, points, pos_multiplier=1, draw_color=np.array([255, 255, 0])):
-	tri = Delaunay(points)
-	for t in tri.simplices.copy():
-		p1 = np.array([p * pos_multiplier for p in points[t[0]]]).astype(int)
-		p2 = np.array([p * pos_multiplier for p in points[t[1]]]).astype(int)
-		p3 = np.array([p * pos_multiplier for p in points[t[2]]]).astype(int)
-
-		image[draw.line(p1[0], p1[1], p2[0], p2[1])] = draw_color
-		image[draw.line(p2[0], p2[1], p3[0], p3[1])] = draw_color
-		image[draw.line(p3[0], p3[1], p1[0], p1[1])] = draw_color
+def clamp(value, minf, maxf):
+	return min(maxf, max(minf, value))
 
 def warpTriangle(src_img, dst_image, src_tri, dst_tri) :    
     # Find bounding rectangle for each triangle
@@ -66,23 +58,34 @@ def warpTriangle(src_img, dst_image, src_tri, dst_tri) :
     
     dst_image[r2[1]:r2[1]+r2[3], r2[0]:r2[0]+r2[2]] = dst_image[r2[1]:r2[1]+r2[3], r2[0]:r2[0]+r2[2]] + dst_image_cropped
 
-def drawWarpedTriangles(image, points, deltas, pos_multiplier=1):
+def drawWarpedTriangles(image, points, deltas):
 	image_orig = image.copy()
 
 	tri = Delaunay(points)
 	for t in tri.simplices.copy():
-		p1 = points[t[0]] * pos_multiplier
-		p2 = points[t[1]] * pos_multiplier
-		p3 = points[t[2]] * pos_multiplier
+		p1 = points[t[0]]
+		p2 = points[t[1]]
+		p3 = points[t[2]]
 
-		d1 = deltas[t[0]] * pos_multiplier
-		d2 = deltas[t[1]] * pos_multiplier
-		d3 = deltas[t[2]] * pos_multiplier
+		d1 = deltas[t[0]]
+		d2 = deltas[t[1]]
+		d3 = deltas[t[2]]
 
 		tri_points_src = np.float32([[[p1[1], p1[0]], [p2[1], p2[0]], [p3[1], p3[0]]]])
 		tri_points_dst = np.float32([[[d1[1], d1[0]], [d2[1], d2[0]], [d3[1], d3[0]]]])
 
 		warpTriangle(image_orig, image, tri_points_src, tri_points_dst)
+
+def drawTriangles(image, points, draw_color=np.array([255, 255, 0])):
+	tri = Delaunay(points)
+	for t in tri.simplices.copy():
+		p1 = points[t[0]].astype(int)
+		p2 = points[t[1]].astype(int)
+		p3 = points[t[2]].astype(int)
+
+		image[draw.line(p1[0], p1[1], p2[0], p2[1])] = draw_color
+		image[draw.line(p2[0], p2[1], p3[0], p3[1])] = draw_color
+		image[draw.line(p3[0], p3[1], p1[0], p1[1])] = draw_color
 
 def overlayImage(bg, overlay):
 	gray = cv2.cvtColor(overlay, cv2.COLOR_BGR2GRAY)
