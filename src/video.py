@@ -35,13 +35,13 @@ def create_output_dir(output_path):
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
-def setupOpenCV(input_path, output_path, frame_rate):
-    global CAPTURE, VIDEO, FACE_CASCADE
-    CAPTURE = cv2.VideoCapture(input_path, 0)
+def setupOpenCV(input_path, output_path, frame_rate, output_width, output_height):
+    capture = cv2.VideoCapture(input_path, 0)
     fourcc = cv2.VideoWriter_fourcc(*'H264')
-    VIDEO = cv2.VideoWriter()
-    VIDEO.open(output_path, fourcc, frame_rate, (OUTPUT_WIDTH, OUTPUT_HEIGHT), True)
-    FACE_CASCADE = toolbox.loadCascade('haarcascade_frontalface_default.xml')
+    video = cv2.VideoWriter()
+    video.open(output_path, fourcc, frame_rate, (output_width, output_height), True)
+    face_cascade = toolbox.loadCascade('haarcascade_frontalface_default.xml')
+    return (capture, video, face_cascade)
 
 def rotateFrame(image, angle, crop=True):
     if (angle < 0):
@@ -87,72 +87,128 @@ def cropFrame(frame, x, y, w, h):
     else:
         return frame
 
-def save():
-    glPixelStorei(GL_PACK_ALIGNMENT, 1)
-    buffer = glReadPixels(0, 0, OUTPUT_WIDTH, OUTPUT_HEIGHT, GL_BGR, GL_UNSIGNED_BYTE)
+def getGLFrame(frame, points, output_width, output_height):
+    ############## OpengGL ##############
 
-    image = Image.frombytes('RGB', (OUTPUT_WIDTH, OUTPUT_HEIGHT), buffer)     
+    p1, p2, p3 = points[39], points[42], points[33]
+    w, h = output_width, output_height
+
+    p1 = [(p1[1] / w) * 2 - 1, -((p1[0] / h) * 2 - 1)]
+    p2 = [(p2[1] / w) * 2 - 1, -((p2[0] / h) * 2 - 1)]
+    p3 = [(p3[1] / w) * 2 - 1, -((p3[0] / h) * 2 - 1)]
+
+    triangle = Triangle(p1, p2, p3)
+    tri_program = ShaderProgram(fragment=triangle.fragment, vertex=triangle.vertex)
+    triangle.loadVBOs(tri_program)
+    triangle.loadElements()
+
+
+    glClear(GL_COLOR_BUFFER_BIT)
+    glClearColor (0.0, 0.0, 0.0, 1.0)
+
+    #-----------------------------------#
+
+    QUAD_PROGRAM.start()
+    toolbox.bind(QUAD)
+
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, w, h, 0, GL_BGR, GL_UNSIGNED_BYTE, frame)
+
+    glDrawElements(GL_TRIANGLES, len(QUAD.elements) * 3, GL_UNSIGNED_INT, None)
+
+    toolbox.unbind()
+    QUAD_PROGRAM.stop()
+
+    #-----------------------------------#
+
+    tri_program.start()
+    toolbox.bind(triangle)
+
+    glDrawElements(GL_TRIANGLES, len(triangle.elements) * 3, GL_UNSIGNED_INT, None)
+
+    toolbox.unbind()
+    tri_program.stop()
+
+    #-----------------------------------#
+
+    glFinish()
+
+    glPixelStorei(GL_PACK_ALIGNMENT, 1)
+    buffer = glReadPixels(0, 0, output_width, output_height, GL_BGR, GL_UNSIGNED_BYTE)
+
+    image = Image.frombytes('RGB', (output_width, output_height), buffer)     
     image = image.transpose(Image.FLIP_TOP_BOTTOM)
 
-    output = np.asarray(image, dtype=np.uint8)
+    frame = np.asarray(image, dtype=np.uint8)
 
-    VIDEO.write(output)
+    glutSwapBuffers()
 
-def loop():
-    global TOTAL_FRAMES, FRAME_COUNT
-    global SKIPPED_FRAMES, SKIP_FRAME_X, SKIP_FRAME_Y, SKIP_RECT, SKIP_POINTS, SKIP_DELTAS
+    #####################################
 
-    _, frame = CAPTURE.read()
-    
-    if frame is None:
-        quit()
+    return frame
+
+def processFrame(frame, rotation, frame_skip_rate, face_cascade, predictor, recognize_scale, output_width, output_height, last_params):
+    s_frames    = None
+    s_frame_x   = None
+    s_frame_y   = None
+    s_rect      = None
+    s_points    = None
+    s_deltas    = None
+
+    if last_params is not None:
+        s_frames, s_frame_x, s_frame_y, s_rect, s_points, s_deltas = last_params
+
+    points = None
 
     # Roate the frame
-    frame = rotateFrame(frame, ROTATION)
+    frame = rotateFrame(frame, rotation)
 
-    scale = (1 / RECOGNIZE_SCALE)
+    scale = (1 / recognize_scale)
 
     # Check how many frames have been skipped
-    if SKIPPED_FRAMES < FRAME_SKIP_RATE:
-        SKIPPED_FRAMES += 1
+    if s_frames is not None and s_frames > 0:
+        s_frames -= 1
 
-        if SKIP_FRAME_X is not None and SKIP_FRAME_Y is not None:
-            frame = cropFrame(frame, SKIP_FRAME_X, SKIP_FRAME_Y, OUTPUT_WIDTH, OUTPUT_HEIGHT)
+        if s_frame_x is not None and s_frame_y is not None:
+            frame = cropFrame(frame, s_frame_x, s_frame_y, output_width, output_height)
 
-        if SKIP_POINTS is not None and SKIP_DELTAS is not None:
-            toolbox.drawWarpedTriangles(frame, SKIP_POINTS, SKIP_DELTAS)
+        if s_points is not None and s_deltas is not None:
+            toolbox.drawWarpedTriangles(frame, s_points, s_deltas)
+
+        points = s_points
+
+        last_params = (s_frames, s_frame_x, s_frame_y, s_rect, s_points, s_deltas)
     else:
-        SKIPPED_FRAMES = 0
+        s_frames = frame_skip_rate
 
         # Get current frame width and height for later usage
         (frame_height, frame_width) = frame.shape[:2]
 
         # Create a low resolution version of the rotated frame
-        small = cv2.resize(frame, (0,0), fx=RECOGNIZE_SCALE, fy=RECOGNIZE_SCALE)
+        small = cv2.resize(frame, (0,0), fx=recognize_scale, fy=recognize_scale)
         gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
 
         # Recognize a face on the low reslution frame
-        faces = FACE_CASCADE.detectMultiScale(gray, 1.1, 5)
+        faces = face_cascade.detectMultiScale(gray, 1.1, 5)
         for (x, y, w, h) in faces:
             # Scale up coordinates
             x, y, w, h = int(x * scale), int(y * scale), int(w * scale), int(h * scale)
 
             # Crop the frame
-            frame_x = int((frame_width - OUTPUT_WIDTH) / 2)
-            frame_y = y - int((OUTPUT_HEIGHT - h) / 2)
-            frame = cropFrame(frame, frame_x, frame_y, OUTPUT_WIDTH, OUTPUT_HEIGHT)
+            frame_x = int((frame_width - output_width) / 2)
+            frame_y = y - int((output_height - h) / 2)
+            frame = cropFrame(frame, frame_x, frame_y, output_width, output_height)
 
             # Normalize coordinates to the cropped frame
             x = x - frame_x
             y = y - frame_y
 
             # Create a low resolution version of the cropped frame
-            small = cv2.resize(frame, (0,0), fx=RECOGNIZE_SCALE, fy=RECOGNIZE_SCALE)
+            small = cv2.resize(frame, (0,0), fx=recognize_scale, fy=recognize_scale)
 
             # Find all the landmarks on the face
-            rs = RECOGNIZE_SCALE
+            rs = recognize_scale
             low_rect = (x * rs, y * rs, w * rs, h * rs)
-            shape = PREDICTOR(small, toolbox.rect2rectangle(low_rect))
+            shape = predictor(small, toolbox.rect2rectangle(low_rect))
             points = np.array([[p.y * scale, p.x * scale] for p in shape.parts()])
 
             # Create an array of deltas points
@@ -180,82 +236,20 @@ def loop():
             toolbox.drawWarpedTriangles(frame, points, deltas)
 
             # Save values to use while skipping frames
-            SKIP_FRAME_X = frame_x
-            SKIP_FRAME_Y = frame_y
-            SKIP_RECT    = (x, y, w, h)
-            SKIP_POINTS  = points
-            SKIP_DELTAS  = deltas
+            last_params = (s_frames, frame_x, frame_y, (x, y, w, h), points, deltas)
 
-    ############## OpengGL ##############
+    return (frame, points, last_params)
 
-    if SKIP_POINTS is None:
-        return
-
-    p1, p2, p3 = SKIP_POINTS[39], SKIP_POINTS[42], SKIP_POINTS[33]
-    w, h = OUTPUT_WIDTH, OUTPUT_HEIGHT
-
-    p1 = [(p1[1] / w) * 2 - 1, -((p1[0] / h) * 2 - 1)]
-    p2 = [(p2[1] / w) * 2 - 1, -((p2[0] / h) * 2 - 1)]
-    p3 = [(p3[1] / w) * 2 - 1, -((p3[0] / h) * 2 - 1)]
-
-    triangle = Triangle(p1, p2, p3)
-    tri_program = ShaderProgram(fragment=triangle.fragment, vertex=triangle.vertex)
-    triangle.loadVBOs(tri_program)
-    triangle.loadElements()
-
-
-    glClear(GL_COLOR_BUFFER_BIT)
-    glClearColor (0.0, 0.0, 0.0, 1.0)
-
-    #-----------------------------------#
-
-    QUAD_PROGRAM.start()
-    toolbox.bind(QUAD)
-
-    height, widht = frame.shape[:2]
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, widht, height, 0, GL_BGR, GL_UNSIGNED_BYTE, frame)
-
-    glDrawElements(GL_TRIANGLES, len(QUAD.elements) * 3, GL_UNSIGNED_INT, None)
-
-    toolbox.unbind()
-    QUAD_PROGRAM.stop()
-
-    #-----------------------------------#
-
-    tri_program.start()
-    toolbox.bind(triangle)
-
-    glDrawElements(GL_TRIANGLES, len(triangle.elements) * 3, GL_UNSIGNED_INT, None)
-
-    toolbox.unbind()
-    tri_program.stop()
-
-    #-----------------------------------#
-
-    glFinish()
-
-    save()
-
-    glutSwapBuffers()
-
-    #####################################
-
-    # Update the progress bar
-    FRAME_COUNT += 1
-    progressbar.update(FRAME_COUNT / TOTAL_FRAMES)
-
-def quit():
-    CAPTURE.release()
-    VIDEO.release()
+def quit(capture, video):
+    capture.release()
+    video.release()
     exit()
 
-def initGL():
+def initGL(output_width, output_height):
     glutInit(sys.argv)
     glutInitDisplayMode(GLUT_3_2_CORE_PROFILE | GLUT_RGBA | GLUT_DOUBLE | GLUT_DEPTH)
-    glutInitWindowSize(OUTPUT_WIDTH, OUTPUT_HEIGHT)
+    glutInitWindowSize(output_width, output_height)
     glutCreateWindow("Virtual Window")
-    glutDisplayFunc(loop)
-    glutIdleFunc(loop)
 
     print('')
     print('Vendor:          ' + glGetString(GL_VENDOR).decode('utf-8'))
@@ -279,43 +273,53 @@ def initGL():
     QUAD.loadVBOs(QUAD_PROGRAM)
     QUAD.loadElements()
 
-    progressbar.init()
-
-    glutMainLoop()
-
 def main():
     args = handle_args()
 
     input_path      = args.i[0]
     output_path     = args.o[0]
+    rotation        = args.r[0]
+    output_width    = int(args.c[0].split('x')[0])
+    output_height   = int(args.c[0].split('x')[1])
     frame_rate      = args.f[0]
-
-    global ROTATION, OUTPUT_WIDTH, OUTPUT_HEIGHT, FRAME_SKIP_RATE, RECOGNIZE_SCALE, PREDICTOR
-
-    ROTATION        = args.r[0]
-    OUTPUT_WIDTH    = int(args.c[0].split('x')[0])
-    OUTPUT_HEIGHT   = int(args.c[0].split('x')[1])
-    FRAME_SKIP_RATE = args.k[0]
-    RECOGNIZE_SCALE = 0.2
-    PREDICTOR = dlib.shape_predictor('../shapes/shape_predictor_68_face_landmarks.dat')
+    frame_skip_rate = args.k[0]
+    recognize_scale = 0.2
+    predictor = dlib.shape_predictor('../shapes/shape_predictor_68_face_landmarks.dat')
 
     create_output_dir(output_path)
 
-    setupOpenCV(input_path, output_path, frame_rate)
+    capture, video, face_cascade = setupOpenCV(input_path, output_path, frame_rate, output_width, output_height)
 
-    global TOTAL_FRAMES, FRAME_COUNT
-    TOTAL_FRAMES = toolbox.getTotalFrames(input_path)
-    FRAME_COUNT = 0
+    initGL(output_width, output_height)
 
-    global SKIPPED_FRAMES, SKIP_FRAME_X, SKIP_FRAME_Y, SKIP_RECT, SKIP_POINTS, SKIP_DELTAS
-    SKIPPED_FRAMES = 0
-    SKIP_FRAME_X = None
-    SKIP_FRAME_Y = None
-    SKIP_RECT    = None
-    SKIP_POINTS  = None
-    SKIP_DELTAS  = None
+    total_frames = toolbox.getTotalFrames(input_path)
+    frame_count = 0
 
-    initGL()
+    progressbar.init()
+
+    last_params = None
+
+    while True:
+        success, frame = capture.read()
+        if success and frame is not None:
+            frame, points, last_params = processFrame(frame, rotation, frame_skip_rate, face_cascade, predictor, recognize_scale, output_width, output_height, last_params)
+            if frame is not None:
+                if points is not None:
+                    frame = getGLFrame(frame, points, output_width, output_height)
+
+                video.write(frame)
+                frame_count += 1
+                progress = frame_count / total_frames
+                progressbar.update(progress)
+
+                if progress >= 0.5:
+                    break
+            else:
+                break
+        else:
+            break
+
+    quit(capture, video)
 
 if __name__ == '__main__':
     main()

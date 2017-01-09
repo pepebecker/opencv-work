@@ -13,7 +13,7 @@ RUN mkdir -p /usr/src/app
 
 ADD . /usr/src/app
 
-WORKDIR /usr/src/app
+WORKDIR /usr/src/app/src
 
 # X Virtual Frame Buffer
 ENV DISPLAY :99
