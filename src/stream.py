@@ -286,6 +286,10 @@ def handle_args():
     return parser.parse_args()
 
 def main():
+    ############################################################################################
+    # Trying to read frames from STDIN to be able to pipe the frames from ffmpeg to docker run #
+    # ffmpeg -s 1920x1080 -framerate 30 ... -an -vcodec copy | docker run ...                  #
+    ############################################################################################
     with os.fdopen(sys.stdin.fileno(), 'rb') as input_file:
         byte = input_file.read(1)
         while byte != "":
