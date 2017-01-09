@@ -13,10 +13,11 @@ RUN mkdir -p /usr/src/app
 
 ADD . /usr/src/app
 
-WORKDIR /usr/src/app
+WORKDIR /usr/src/app/src
 
 # X Virtual Frame Buffer
 ENV DISPLAY :99
-ADD run.sh /run.sh
-RUN chmod a+x /run.sh
-CMD /run.sh
+# ADD run.sh /run.sh
+# RUN chmod a+x /run.sh
+# CMD /run.sh
+CMD /usr/src/app/run.sh

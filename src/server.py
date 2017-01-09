@@ -11,6 +11,8 @@ from OpenGL.GL import *
 from OpenGL.GLUT import *
 from PIL import Image
 
+from flask import Flask, render_template, Response
+
 # import my local helper modules
 import toolbox
 import progressbar
@@ -273,8 +275,41 @@ def initGL(output_width, output_height):
     QUAD.loadVBOs(QUAD_PROGRAM)
     QUAD.loadElements()
 
+def gen(input_path, capture, rotation, frame_skip_rate, face_cascade, predictor, recognize_scale, output_width, output_height):
+    total_frames = toolbox.getTotalFrames(input_path)
+    frame_count = 0
+
+    progressbar.init()
+
+    last_params = None
+
+    while True:
+        success, frame = capture.read()
+        if success and frame is not None:
+            frame, points, last_params = processFrame(frame, rotation, frame_skip_rate, face_cascade, predictor, recognize_scale, output_width, output_height, last_params)
+            if frame is not None:
+                if points is not None:
+                    frame = getGLFrame(frame, points, output_width, output_height)
+
+                ret, jpeg = cv2.imencode('.jpg', frame)
+                image = jpeg.tobytes()
+                yield (b'--frame\r\n' b'Content-Type: image/jpeg\r\n\r\n' + image + b'\r\n\r\n')
+
+                frame_count += 1
+                progress = frame_count / total_frames
+                progressbar.update(progress)
+
+                if progress >= 0.5:
+                    break
+            else:
+                break
+        else:
+            break
+
 def main():
     args = handle_args()
+
+    global input_path, capture, rotation, frame_skip_rate, face_cascade, predictor, recognize_scale, output_width, output_height
 
     input_path      = args.i[0]
     output_path     = args.o[0]
@@ -292,34 +327,19 @@ def main():
 
     initGL(output_width, output_height)
 
-    total_frames = toolbox.getTotalFrames(input_path)
-    frame_count = 0
+    app.run(host='0.0.0.0', debug=True)
 
-    progressbar.init()
+app = Flask(__name__)
 
-    last_params = None
+@app.route('/')
+def index():
+    return render_template('index.html')
 
-    while True:
-        success, frame = capture.read()
-        if success and frame is not None:
-            frame, points, last_params = processFrame(frame, rotation, frame_skip_rate, face_cascade, predictor, recognize_scale, output_width, output_height, last_params)
-            if frame is not None:
-                if points is not None:
-                    frame = getGLFrame(frame, points, output_width, output_height)
-
-                video.write(frame)
-                frame_count += 1
-                progress = frame_count / total_frames
-                progressbar.update(progress)
-
-                if progress >= 0.5:
-                    break
-            else:
-                break
-        else:
-            break
-
-    quit(capture, video)
+@app.route('/video_feed')
+def video_feed():
+    global input_path, capture, rotation, frame_skip_rate, face_cascade, predictor, recognize_scale, output_width, output_height
+    data = gen(input_path, capture, rotation, frame_skip_rate, face_cascade, predictor, recognize_scale, output_width, output_height)
+    return Response(data, mimetype='multipart/x-mixed-replace; boundary=frame')
 
 if __name__ == '__main__':
     main()
