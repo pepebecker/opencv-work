@@ -7,11 +7,14 @@ import numpy as np
 import cv2
 import dlib
 import time
+import urllib
 import argparse
+import requests
 
 from OpenGL.GL import *
 from OpenGL.GLUT import *
 from PIL import Image
+from jpegtran import JPEGImage
 
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -67,49 +70,49 @@ def createCustomHandlerClass(_args):
                 self.send_header('Expires', 'Mon, 3 Jan 2000 12:34:56 GMT')
                 self.send_header('Pragma', 'no-cache')
 
-                # capture = cv2.VideoCapture(self.input_path, 0)
-                with open(self.input_path, 'rb') as f:
-                    fbuf = io.BufferedReader(f)
-                    print(fbuf.read(20))
+                stream = self.init_connection(self.input_path)
 
-                exit()
+                stream_bytes = b''
+                for line in stream.iter_content(chunk_size=2048, decode_unicode=False):
+                    stream_bytes += line
+                    a = stream_bytes.find(b'\xff\xd8') # Start of a frame
+                    b = stream_bytes.find(b'\xff\xd9') # End of a frame
+                    if a != -1 and b != -1:
+                        frame_bytes = stream_bytes[a:b+2]
+                        stream_bytes = stream_bytes[b+2:]
 
-                while True:
-                    try:
-                        success, frame = capture.read()
-                        if success and frame is not None:
-                            frame, points = self.processFrame(frame, self.rotation, self.frame_skip_rate, self.face_cascade, self.predictor, self.recognize_scale, self.output_width, self.output_height)
-                            if frame is not None:
-                                # if points is not None:
-                                    # frame = self.getGLFrame(frame, points, self.output_width, self.output_height)
+                        frame = cv2.imdecode(np.fromstring(frame_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
+                        
+                        frame, points = self.processFrame(frame, self.rotation, self.frame_skip_rate, self.face_cascade, self.predictor, self.recognize_scale, self.output_width, self.output_height)
+                        if frame is not None:
+                            # if points is not None:
+                                # frame = self.getGLFrame(frame, points, self.output_width, self.output_height)
 
-                                jpg = cv2.imencode('.jpg', frame)[1]
+                            jpg = cv2.imencode('.jpg', frame)[1]
 
-                                # Part boundary string
-                                self.end_headers()
-                                self.wfile.write(bytes(self.boundary.encode('utf-8')))
-                                self.end_headers()
+                            # Part boundary string
+                            self.end_headers()
+                            self.wfile.write(bytes(self.boundary.encode('utf-8')))
+                            self.end_headers()
 
-                                # Part headers
-                                self.send_header('X-Timestamp', time.time())
-                                self.send_header('Content-length', str(len(jpg)))
-                                self.send_header('Content-type', 'image/jpeg')
-                                self.end_headers()
+                            # Part headers
+                            self.send_header('X-Timestamp', time.time())
+                            self.send_header('Content-length', str(len(jpg)))
+                            self.send_header('Content-type', 'image/jpeg')
+                            self.end_headers()
 
-                                # Write Binary
-                                self.wfile.write(bytes(jpg))
-                            else:
-                               break
-                        else:
-                            break
-                    except KeyboardInterrupt:
-                        break
-
-                capture.release()
+                            # Write Binary
+                            self.wfile.write(bytes(jpg))
             else:
                 self.send_header('Content-type', 'text/html')
                 self.end_headers()
                 self.wfile.write(bytes(self.html.encode('utf-8')))
+
+        def init_connection(self, url):
+            session = requests.Session()
+            request = requests.Request("GET", url).prepare()
+            response_stream = session.send(request, stream=True)
+            return response_stream
 
         def log_message(self, format, *args):
             return
@@ -217,7 +220,9 @@ def createCustomHandlerClass(_args):
             points = None
 
             # Roate the frame
-            frame = self.rotateFrame(frame, rotation)
+            # frame = self.rotateFrame(frame, rotation)
+
+            return (frame, points)
 
             scale = (1 / recognize_scale)
 
@@ -286,29 +291,6 @@ def handle_args():
     return parser.parse_args()
 
 def main():
-    ############################################################################################
-    # Trying to read frames from STDIN to be able to pipe the frames from ffmpeg to docker run #
-    # ffmpeg -s 1920x1080 -framerate 30 ... -an -vcodec copy | docker run ...                  #
-    ############################################################################################
-    with os.fdopen(sys.stdin.fileno(), 'rb') as input_file:
-        byte = input_file.read(1)
-        while byte != "":
-            print('Got a byte')
-        # byte = input_file.read(1)
-
-    # input_file = os.open('../videos/stream', os.O_RDWR|os.O_CREAT)
-    # with os.fdopen(input_file, 'rb') as stream:
-    
-    #     fbuf = io.BufferedReader(input_file)
-    #     print(fbuf.read(20))
-
-
-    # with open('../videos/stream', 'rb', buffering=0) as f:
-    #     fbuf = io.BufferedReader(f)
-    #     print(fbuf.read(20))
-
-    exit()
-
     try:
         args = handle_args()
         width  = int(args.c[0].split('x')[0])
