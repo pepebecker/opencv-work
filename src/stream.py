@@ -7,7 +7,9 @@ import numpy as np
 import cv2
 import dlib
 import time
+import urllib
 import argparse
+import requests
 
 from OpenGL.GL import *
 from OpenGL.GLUT import *
@@ -31,7 +33,6 @@ def createCustomHandlerClass(_args):
             
             # Handle Arguments
             self.input_path      = _args.i[0]
-            self.output_path     = _args.o[0]
             self.rotation        = _args.r[0]
             self.output_width    = int(_args.c[0].split('x')[0])
             self.output_height   = int(_args.c[0].split('x')[1])
@@ -67,44 +68,49 @@ def createCustomHandlerClass(_args):
                 self.send_header('Expires', 'Mon, 3 Jan 2000 12:34:56 GMT')
                 self.send_header('Pragma', 'no-cache')
 
-                capture = cv2.VideoCapture(self.input_path, 0)
+                stream = self.init_connection(self.input_path)
 
-                while True:
-                    try:
-                        success, frame = capture.read()
-                        if success and frame is not None:
-                            frame, points = self.processFrame(frame, self.rotation, self.frame_skip_rate, self.face_cascade, self.predictor, self.recognize_scale, self.output_width, self.output_height)
-                            if frame is not None:
-                                # if points is not None:
-                                    # frame = self.getGLFrame(frame, points, self.output_width, self.output_height)
+                stream_bytes = b''
+                for line in stream.iter_content(chunk_size=2048, decode_unicode=False):
+                    stream_bytes += line
+                    a = stream_bytes.find(b'\xff\xd8') # Start of a frame
+                    b = stream_bytes.find(b'\xff\xd9') # End of a frame
+                    if a != -1 and b != -1:
+                        frame_bytes = stream_bytes[a:b+2]
+                        stream_bytes = stream_bytes[b+2:]
 
-                                jpg = cv2.imencode('.jpg', frame)[1]
+                        frame = cv2.imdecode(np.fromstring(frame_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
+                        
+                        frame, points = self.processFrame(frame, self.rotation, self.frame_skip_rate, self.face_cascade, self.predictor, self.recognize_scale, self.output_width, self.output_height)
+                        if frame is not None:
+                            # if points is not None:
+                                # frame = self.getGLFrame(frame, points, self.output_width, self.output_height)
 
-                                # Part boundary string
-                                self.end_headers()
-                                self.wfile.write(bytes(self.boundary.encode('utf-8')))
-                                self.end_headers()
+                            jpg = cv2.imencode('.jpg', frame)[1]
 
-                                # Part headers
-                                self.send_header('X-Timestamp', time.time())
-                                self.send_header('Content-length', str(len(jpg)))
-                                self.send_header('Content-type', 'image/jpeg')
-                                self.end_headers()
+                            # Part boundary string
+                            self.end_headers()
+                            self.wfile.write(bytes(self.boundary.encode('utf-8')))
+                            self.end_headers()
 
-                                # Write Binary
-                                self.wfile.write(bytes(jpg))
-                            else:
-                               break
-                        else:
-                            break
-                    except KeyboardInterrupt:
-                        break
+                            # Part headers
+                            self.send_header('X-Timestamp', time.time())
+                            self.send_header('Content-length', str(len(jpg)))
+                            self.send_header('Content-type', 'image/jpeg')
+                            self.end_headers()
 
-                capture.release()
+                            # Write Binary
+                            self.wfile.write(bytes(jpg))
             else:
                 self.send_header('Content-type', 'text/html')
                 self.end_headers()
                 self.wfile.write(bytes(self.html.encode('utf-8')))
+
+        def init_connection(self, url):
+            session = requests.Session()
+            request = requests.Request("GET", url).prepare()
+            response_stream = session.send(request, stream=True)
+            return response_stream
 
         def log_message(self, format, *args):
             return
@@ -212,7 +218,9 @@ def createCustomHandlerClass(_args):
             points = None
 
             # Roate the frame
-            frame = self.rotateFrame(frame, rotation)
+            # frame = self.rotateFrame(frame, rotation)
+
+            return (frame, points)
 
             scale = (1 / recognize_scale)
 
@@ -272,8 +280,7 @@ def createCustomHandlerClass(_args):
 
 def handle_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('-i', nargs=1, type=str,    metavar='input-path',   required=True,          help='Input video path')
-    parser.add_argument('-o', nargs=1, type=str,    metavar='output-path',  required=True,          help='Output video path')
+    parser.add_argument('-i', nargs=1, type=str,    metavar='input-path',   required=True,          help='Input video stream')
     parser.add_argument('-r', nargs=1, type=float,  metavar='degree',       default=[0],            help='Rotate the video by # degree')
     parser.add_argument('-c', nargs=1, type=str,    metavar='1024x768',     default=['1024x768'],   help='Crop the video to a specified resolution')
     parser.add_argument('-f', nargs=1, type=float,  metavar='frame-rate',   default=[30],           help='Specify the frame rate of the output video')

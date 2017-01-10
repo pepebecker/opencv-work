@@ -8,6 +8,7 @@ RUN pip install --upgrade pip
 RUN pip install --upgrade --user scikit-image
 RUN pip install --upgrade --user numpy scipy matplotlib ipython jupyter pandas sympy nose
 RUN pip install --upgrade --user PyOpenGL PyOpenGL_accelerate
+RUN pip install --upgrade --user requests
 
 RUN mkdir -p /usr/src/app
 
@@ -17,6 +18,4 @@ WORKDIR /usr/src/app/src
 
 # X Virtual Frame Buffer
 ENV DISPLAY :99
-ADD run.sh /run.sh
-RUN chmod a+x /run.sh
-CMD /run.sh
+ENTRYPOINT ["/usr/src/app/run.sh"]
