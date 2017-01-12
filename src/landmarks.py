@@ -93,7 +93,7 @@ def convert(frame, rotation, face_cascade, predictor, recognize_scale, output_wi
         # Scale up coordinates
         x, y, w, h = int(x * scale), int(y * scale), int(w * scale), int(h * scale)
 
-        # Create a low resolution version of the cropped frame
+        # Create a low resolution version of the frame
         small = cv2.resize(frame, (0,0), fx=recognize_scale, fy=recognize_scale)
 
         # Find all the landmarks on the face
